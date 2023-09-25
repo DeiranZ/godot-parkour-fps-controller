@@ -47,7 +47,7 @@ var crouching: bool = false
 
 
 var direction: Vector3 = Vector3()
-var velocity: Vector3 = Vector3()
+var controller_velocity: Vector3 = Vector3()
 var gravity_vec: Vector3 = Vector3()
 var movement: Vector3 = Vector3()
 
@@ -69,9 +69,9 @@ func _ready():
 func _input(event):
 	# Move the camera with mouse motion
 	if event is InputEventMouseMotion:
-		rotate_y(deg2rad(-event.relative.x * mouse_sense))
-		head.rotate_x(deg2rad(-event.relative.y * mouse_sense))
-		head.rotation.x = clamp(head.rotation.x, deg2rad(-85), deg2rad(85))
+		rotate_y(deg_to_rad(-event.relative.x * mouse_sense))
+		head.rotate_x(deg_to_rad(-event.relative.y * mouse_sense))
+		head.rotation.x = clamp(head.rotation.x, deg_to_rad(-85), deg_to_rad(85))
 	
 	# Capture the mouse on click
 	elif event is InputEventMouseButton:
@@ -94,7 +94,7 @@ func _process(delta):
 		camera.global_transform.origin = head.global_transform.origin
 	
 	# Dynamic camera FOV based on character speed; sense of speed
-	camera.fov = lerp(camera.fov, 75 + motion_velocity.length(), 0.1)
+	camera.fov = lerp(camera.fov, 75 + controller_velocity.length(), 0.1)
 	
 	# Rotating around with gamepad
 	if InputEventJoypadMotion:
@@ -103,9 +103,9 @@ func _process(delta):
 		axis_vector.x = Input.get_action_strength("look_right") - Input.get_action_strength("look_left")
 		axis_vector.y = Input.get_action_strength("look_down") - Input.get_action_strength("look_up")
 		
-		rotate_y(deg2rad(-axis_vector.x * pad_sense))
-		head.rotate_x(deg2rad(-axis_vector.y * pad_sense))
-		head.rotation.x = clamp(head.rotation.x, deg2rad(-85), deg2rad(85))
+		rotate_y(deg_to_rad(-axis_vector.x * pad_sense))
+		head.rotate_x(deg_to_rad(-axis_vector.y * pad_sense))
+		head.rotation.x = clamp(head.rotation.x, deg_to_rad(-85), deg_to_rad(85))
 	
 	# Lerp the Stamina Bar
 	$HUD/StaminaBar.value = lerp($HUD/StaminaBar.value, stamina, 0.1)
@@ -159,7 +159,7 @@ func _physics_process(delta):
 			double_jump = false
 			gravity_vec = Vector3.UP * jump
 			var forward_dir = Vector3.FORWARD.rotated(Vector3.UP, h_rot).normalized()
-			velocity = forward_dir * 20
+			controller_velocity = forward_dir * 20
 			spawn_jump_particles()
 			
 			play_jump_sound(0.5, 0.7)
@@ -184,7 +184,7 @@ func _physics_process(delta):
 				head_tween.tween_property(camera, "rotation:z", -0.15, 0.3).set_trans(Tween.TRANS_CUBIC)
 			double_jump = true
 			wallrun_time += delta
-			gravity_vec = wallrun_curve.interpolate(wallrun_time/MAX_WALLRUN_TIME) * 5 * Vector3.UP
+			gravity_vec = wallrun_curve.sample(wallrun_time/MAX_WALLRUN_TIME) * 5 * Vector3.UP
 			stamina -= delta * stamina_decay_rate
 			direction = direction.slide($LeftWallRay.get_collision_normal())
 			direction -= $LeftWallRay.get_collision_normal()
@@ -196,7 +196,7 @@ func _physics_process(delta):
 				head_tween.tween_property(camera, "rotation:z", 0.15, 0.3).set_trans(Tween.TRANS_CUBIC)
 			double_jump = true
 			wallrun_time += delta
-			gravity_vec = wallrun_curve.interpolate(wallrun_time/MAX_WALLRUN_TIME) * 5 * Vector3.UP
+			gravity_vec = wallrun_curve.sample(wallrun_time/MAX_WALLRUN_TIME) * 5 * Vector3.UP
 			stamina -= delta * stamina_decay_rate
 			direction = direction.slide($RightWallRay.get_collision_normal())
 			direction -= $RightWallRay.get_collision_normal()
@@ -220,7 +220,7 @@ func _physics_process(delta):
 		# The wall was on the left side of the player
 		elif $LeftWallRay.is_colliding():
 			gravity_vec = Vector3.UP * jump
-			velocity = forward_dir * 20
+			controller_velocity = forward_dir * 20
 			stamina -= 30
 			var head_tween: Tween = get_tree().create_tween()
 			head_tween.tween_property(camera, "rotation:z", 0.0, 0.3).set_trans(Tween.TRANS_CUBIC)
@@ -232,7 +232,7 @@ func _physics_process(delta):
 		# The wall was on the right side of the player
 		elif $RightWallRay.is_colliding():
 			gravity_vec = Vector3.UP * jump
-			velocity = forward_dir * 20
+			controller_velocity = forward_dir * 20
 			stamina -= 30
 			var head_tween: Tween = get_tree().create_tween()
 			head_tween.tween_property(camera, "rotation:z", 0.0, 0.3).set_trans(Tween.TRANS_CUBIC)
@@ -246,7 +246,7 @@ func _physics_process(delta):
 				gravity_vec = Vector3.UP * jump * 1.5
 			else:
 				gravity_vec = Vector3.UP * jump
-				velocity = -forward_dir * 20
+				controller_velocity = -forward_dir * 20
 				stamina -= 30
 			spawn_jump_particles()
 			
@@ -268,8 +268,8 @@ func _physics_process(delta):
 		$Capsule.disabled = false
 		$CapsuleCrouch.disabled = true
 	
-	velocity = velocity.lerp(direction * speed, accel * delta)
-	movement = velocity + gravity_vec
+	controller_velocity = controller_velocity.lerp(direction * speed, accel * delta)
+	movement = controller_velocity + gravity_vec
 	
 	if bobbing_anim.get_current_animation() != "gigabob_down":
 		if direction != Vector3.ZERO:
@@ -280,14 +280,14 @@ func _physics_process(delta):
 	# Camera shaking in air to convey speed
 	if not is_on_floor():
 		if movement != Vector3.ZERO:
-			shaking_anim.playback_speed = clamp(movement.length() / 30, 0, 3)
+			shaking_anim.speed_scale = clamp(movement.length() / 30, 0, 3)
 			shaking_anim.play("shake")
 	elif shaking_anim.assigned_animation != "return":
 			shaking_anim.stop()
 			shaking_anim.play("return")
 	
 	floor_snap_length = snap.length()
-	set_motion_velocity(movement)
+	set_velocity(movement)
 	move_and_slide()
 
 
